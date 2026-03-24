@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">LiteBrowser</string>
+    <string name="hint_enter_url">Search or type URL</string>
+    <string name="cd_back">Back</string>
+    <string name="cd_forward">Forward</string>
+    <string name="cd_more_options">More options</string>
+    <string name="cd_nav_back">Navigation back</string>
+    <string name="cd_nav_forward">Navigation forward</string>
+    <string name="cd_tabs">Tabs</string>
+    <string name="cd_menu">Menu</string>
 </resources>
