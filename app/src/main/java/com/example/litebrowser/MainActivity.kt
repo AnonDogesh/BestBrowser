@@ -48,7 +48,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
 
         val activeTab = TabManager.getActiveTab() ?: TabManager.newTab(DEFAULT_URL)
         updateTabCount()
-        loadUrl(activeTab.url)
+        openTab(activeTab, shouldSwitch = false)
     }
 
     @Suppress("SetJavaScriptEnabled")
@@ -266,15 +266,50 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         TabManager.persist(this)
     }
 
-    override fun onTabSelected(id: UUID) {
-        val tab = TabManager.switchTo(id)
-        TabManager.persist(this)
+
+    private fun saveCurrentTabState() {
+        val activeTab = TabManager.getActiveTab() ?: return
+        val state = Bundle()
+        binding.webView.saveState(state)
+        activeTab.stateBundle = state
+        activeTab.url = binding.webView.url ?: activeTab.url
+        activeTab.title = binding.webView.title ?: activeTab.title
+    }
+
+    private fun openTab(tab: TabManager.BrowserTab, shouldSwitch: Boolean) {
+        if (shouldSwitch) {
+            saveCurrentTabState()
+            TabManager.switchTo(tab.id)
+        }
+
+        val restored = tab.stateBundle?.let { bundle ->
+            binding.webView.stopLoading()
+            binding.webView.loadUrl("about:blank")
+            binding.webView.clearHistory()
+            binding.webView.restoreState(bundle)
+        }
+
+        if (restored == null) {
+            loadUrl(tab.url.ifBlank { DEFAULT_URL })
+        } else {
+            binding.etUrl.setText(tab.url)
+            updateNavigationState()
+        }
+
         updateTabCount()
-        loadUrl(tab.url)
+        TabManager.persist(this)
+    }
+
+    override fun onTabSelected(id: UUID) {
+        val tab = TabManager.getTabs().firstOrNull { it.id == id } ?: return
+        openTab(tab, shouldSwitch = true)
     }
 
     override fun onTabClosed(id: UUID) {
         val closingActive = TabManager.getActiveTab()?.id == id
+        if (!closingActive) {
+            saveCurrentTabState()
+        }
         TabManager.closeTab(id)
         if (TabManager.getTabs().isEmpty()) {
             TabManager.newTab(DEFAULT_URL)
@@ -284,19 +319,19 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
 
         if (closingActive) {
             val activeTab = TabManager.getActiveTab() ?: return
-            loadUrl(activeTab.url)
+            openTab(activeTab, shouldSwitch = false)
         }
     }
 
     override fun onNewTabRequested() {
+        saveCurrentTabState()
         val tab = TabManager.newTab(DEFAULT_URL)
-        TabManager.persist(this)
-        updateTabCount()
-        loadUrl(tab.url)
+        openTab(tab, shouldSwitch = false)
         Toast.makeText(this, "New tab opened", Toast.LENGTH_SHORT).show()
     }
 
     override fun onStop() {
+        saveCurrentTabState()
         super.onStop()
         TabManager.persist(this)
         CookieManager.getInstance().flush()

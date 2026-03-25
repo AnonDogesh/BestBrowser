@@ -2,6 +2,7 @@ package com.example.litebrowser
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Bundle
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -11,7 +12,8 @@ object TabManager {
         val id: UUID,
         var url: String,
         var title: String,
-        var favicon: Bitmap?
+        var favicon: Bitmap?,
+        var stateBundle: Bundle? = null
     )
 
     private const val PREFS_NAME = "litebrowser_tabs"
@@ -40,7 +42,8 @@ object TabManager {
                         id = UUID.fromString(tabJson.getString("id")),
                         url = tabJson.getString("url"),
                         title = tabJson.optString("title", tabJson.getString("url")),
-                        favicon = null
+                        favicon = null,
+                        stateBundle = null
                     )
                 )
             }
@@ -79,7 +82,8 @@ object TabManager {
             id = UUID.randomUUID(),
             url = url,
             title = url,
-            favicon = null
+            favicon = null,
+            stateBundle = null
         )
         tabs.add(tab)
         activeTabIndex = tabs.lastIndex
