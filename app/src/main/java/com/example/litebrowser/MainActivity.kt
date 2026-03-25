@@ -8,6 +8,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
@@ -29,6 +30,11 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
 
     private lateinit var binding: ActivityMainBinding
     private var desktopSiteEnabled = false
+    private val tabWebViews = mutableMapOf<UUID, WebView>()
+    private var currentTabId: UUID? = null
+
+    private val currentWebView: WebView?
+        get() = currentTabId?.let { tabWebViews[it] }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,30 +46,35 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
             TabManager.newTab(DEFAULT_URL)
         }
 
-        setupWebView()
         setupUrlBar()
         setupNavigationButtons()
         setupOverflowMenus()
         setupBackPressHandler()
 
         val activeTab = TabManager.getActiveTab() ?: TabManager.newTab(DEFAULT_URL)
-        updateTabCount()
-        openTab(activeTab, shouldSwitch = false)
+        switchToTab(activeTab.id)
     }
 
-    @Suppress("SetJavaScriptEnabled")
-    private fun setupWebView() {
-        binding.webView.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            loadWithOverviewMode = true
-            useWideViewPort = true
-            builtInZoomControls = true
-            displayZoomControls = false
-            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+    private fun createWebViewForTab(tabId: UUID): WebView {
+        return WebView(this).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+
+            settings.apply {
+                javaScriptEnabled = true
+                domStorageEnabled = true
+                loadWithOverviewMode = true
+                useWideViewPort = true
+                builtInZoomControls = true
+                displayZoomControls = false
+                mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+            }
+
+            webViewClient = BrowserWebViewClient(tabId)
+            webChromeClient = BrowserWebChromeClient(tabId)
         }
-        binding.webView.webViewClient = BrowserWebViewClient()
-        binding.webView.webChromeClient = BrowserWebChromeClient()
     }
 
     private fun setupUrlBar() {
@@ -76,7 +87,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
             if (isGoAction || isEnterKey) {
                 val input = binding.etUrl.text?.toString().orEmpty().trim()
                 if (input.isNotEmpty()) {
-                    loadUrl(parseInput(input))
+                    currentWebView?.loadUrl(parseInput(input))
                 }
                 true
             } else {
@@ -90,12 +101,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
 
         val updateClearIcon = {
             val shouldShow = binding.etUrl.hasFocus() && !binding.etUrl.text.isNullOrEmpty()
-            binding.etUrl.setCompoundDrawablesWithIntrinsicBounds(
-                0,
-                0,
-                if (shouldShow) clearIcon else 0,
-                0
-            )
+            binding.etUrl.setCompoundDrawablesWithIntrinsicBounds(0, 0, if (shouldShow) clearIcon else 0, 0)
         }
 
         binding.etUrl.setOnFocusChangeListener { _, _ -> updateClearIcon() }
@@ -118,21 +124,12 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
     }
 
     private fun setupNavigationButtons() {
-        val goBack = {
-            if (binding.webView.canGoBack()) {
-                binding.webView.goBack()
-            }
+        binding.navBack.setOnClickListener {
+            currentWebView?.takeIf { webView -> webView.canGoBack() }?.goBack()
         }
-        val goForward = {
-            if (binding.webView.canGoForward()) {
-                binding.webView.goForward()
-            }
+        binding.navForward.setOnClickListener {
+            currentWebView?.takeIf { webView -> webView.canGoForward() }?.goForward()
         }
-
-        binding.btnBack.setOnClickListener { goBack() }
-        binding.navBack.setOnClickListener { goBack() }
-        binding.btnForward.setOnClickListener { goForward() }
-        binding.navForward.setOnClickListener { goForward() }
 
         binding.navTabs.setOnClickListener {
             TabSheet().show(supportFragmentManager, TAB_SHEET_TAG)
@@ -168,21 +165,21 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
 
     private fun handleMenuItem(item: MenuItem) {
         when (item.itemId) {
-            MENU_REFRESH -> binding.webView.reload()
+            MENU_REFRESH -> currentWebView?.reload()
             MENU_NEW_TAB -> onNewTabRequested()
             MENU_BOOKMARKS -> Toast.makeText(this, "Bookmarks coming soon", Toast.LENGTH_SHORT).show()
             MENU_SHARE -> shareCurrentUrl()
             MENU_DESKTOP_SITE -> {
                 desktopSiteEnabled = !desktopSiteEnabled
                 item.isChecked = desktopSiteEnabled
-                setDesktopMode(desktopSiteEnabled)
-                binding.webView.reload()
+                tabWebViews.values.forEach { setDesktopMode(it, desktopSiteEnabled) }
+                currentWebView?.reload()
             }
         }
     }
 
     private fun shareCurrentUrl() {
-        val url = binding.webView.url ?: binding.etUrl.text?.toString().orEmpty()
+        val url = currentWebView?.url ?: binding.etUrl.text?.toString().orEmpty()
         if (url.isBlank()) return
 
         val intent = Intent(Intent.ACTION_SEND).apply {
@@ -192,22 +189,24 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         startActivity(Intent.createChooser(intent, "Share link"))
     }
 
-    private fun setDesktopMode(enabled: Boolean) {
-        val settings = binding.webView.settings
-        settings.useWideViewPort = enabled
-        settings.loadWithOverviewMode = enabled
-        settings.userAgentString = if (enabled) {
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        } else {
-            WebSettings.getDefaultUserAgent(this)
+    private fun setDesktopMode(webView: WebView, enabled: Boolean) {
+        webView.settings.apply {
+            useWideViewPort = enabled
+            loadWithOverviewMode = enabled
+            userAgentString = if (enabled) {
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            } else {
+                WebSettings.getDefaultUserAgent(this@MainActivity)
+            }
         }
     }
 
     private fun setupBackPressHandler() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (binding.webView.canGoBack()) {
-                    binding.webView.goBack()
+                val webView = currentWebView
+                if (webView != null && webView.canGoBack()) {
+                    webView.goBack()
                 } else {
                     isEnabled = false
                     onBackPressedDispatcher.onBackPressed()
@@ -219,21 +218,10 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
     private fun parseInput(input: String): String {
         val isLikelyUrl = input.contains(".") && !input.contains(" ")
         return if (isLikelyUrl) {
-            if (input.startsWith("http://") || input.startsWith("https://")) {
-                input
-            } else {
-                "https://$input"
-            }
+            if (input.startsWith("http://") || input.startsWith("https://")) input else "https://$input"
         } else {
             "https://www.google.com/search?q=${URLEncoder.encode(input, Charsets.UTF_8.name())}"
         }
-    }
-
-    private fun loadUrl(url: String) {
-        binding.webView.loadUrl(url)
-        binding.etUrl.setText(url)
-        binding.etUrl.clearFocus()
-        hideKeyboard()
     }
 
     private fun hideKeyboard() {
@@ -241,15 +229,40 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         imm.hideSoftInputFromWindow(binding.etUrl.windowToken, 0)
     }
 
+    private fun switchToTab(tabId: UUID) {
+        val tab = TabManager.getTabs().firstOrNull { it.id == tabId } ?: return
+        TabManager.switchTo(tabId)
+
+        val webView = tabWebViews.getOrPut(tabId) {
+            createWebViewForTab(tabId).also {
+                setDesktopMode(it, desktopSiteEnabled)
+            }
+        }
+
+        binding.webContainer.removeAllViews()
+        (webView.parent as? ViewGroup)?.removeView(webView)
+        binding.webContainer.addView(webView)
+
+        currentTabId = tabId
+
+        if (webView.url.isNullOrBlank()) {
+            webView.loadUrl(tab.url.ifBlank { DEFAULT_URL })
+        } else {
+            binding.etUrl.setText(webView.url)
+            updateNavigationState()
+        }
+
+        updateTabCount()
+        TabManager.persist(this)
+    }
+
     private fun updateNavigationState() {
-        val canGoBack = binding.webView.canGoBack()
-        val canGoForward = binding.webView.canGoForward()
+        val webView = currentWebView
+        val canGoBack = webView?.canGoBack() == true
+        val canGoForward = webView?.canGoForward() == true
 
-        binding.btnBack.isEnabled = canGoBack
         binding.navBack.isEnabled = canGoBack
-        binding.btnForward.isEnabled = canGoForward
         binding.navForward.isEnabled = canGoForward
-
         binding.navBack.alpha = if (canGoBack) 1f else 0.4f
         binding.navForward.alpha = if (canGoForward) 1f else 0.4f
     }
@@ -258,132 +271,107 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         binding.tabCount.text = TabManager.getTabs().size.toString()
     }
 
-    private fun syncActiveTab(url: String? = binding.webView.url, title: String? = binding.webView.title, favicon: Bitmap? = null) {
-        val activeTab = TabManager.getActiveTab() ?: return
-        if (!url.isNullOrBlank()) activeTab.url = url
-        if (!title.isNullOrBlank()) activeTab.title = title
-        if (favicon != null) activeTab.favicon = favicon
-        TabManager.persist(this)
-    }
-
-
-    private fun saveCurrentTabState() {
-        val activeTab = TabManager.getActiveTab() ?: return
-        val state = Bundle()
-        binding.webView.saveState(state)
-        activeTab.stateBundle = state
-        activeTab.url = binding.webView.url ?: activeTab.url
-        activeTab.title = binding.webView.title ?: activeTab.title
-    }
-
-    private fun openTab(tab: TabManager.BrowserTab, shouldSwitch: Boolean) {
-        if (shouldSwitch) {
-            saveCurrentTabState()
-            TabManager.switchTo(tab.id)
-        }
-
-        val restored = tab.stateBundle?.let { bundle ->
-            binding.webView.stopLoading()
-            binding.webView.loadUrl("about:blank")
-            binding.webView.clearHistory()
-            binding.webView.restoreState(bundle)
-        }
-
-        if (restored == null) {
-            loadUrl(tab.url.ifBlank { DEFAULT_URL })
-        } else {
-            binding.etUrl.setText(tab.url)
-            updateNavigationState()
-        }
-
-        updateTabCount()
-        TabManager.persist(this)
-    }
-
     override fun onTabSelected(id: UUID) {
-        val tab = TabManager.getTabs().firstOrNull { it.id == id } ?: return
-        openTab(tab, shouldSwitch = true)
+        switchToTab(id)
     }
 
     override fun onTabClosed(id: UUID) {
-        val closingActive = TabManager.getActiveTab()?.id == id
-        if (!closingActive) {
-            saveCurrentTabState()
+        val wasActive = currentTabId == id
+
+        tabWebViews.remove(id)?.let { webView ->
+            (webView.parent as? ViewGroup)?.removeView(webView)
+            webView.stopLoading()
+            webView.destroy()
         }
+
         TabManager.closeTab(id)
         if (TabManager.getTabs().isEmpty()) {
-            TabManager.newTab(DEFAULT_URL)
+            val created = TabManager.newTab(DEFAULT_URL)
+            switchToTab(created.id)
+            return
         }
-        TabManager.persist(this)
-        updateTabCount()
 
-        if (closingActive) {
+        if (wasActive) {
             val activeTab = TabManager.getActiveTab() ?: return
-            openTab(activeTab, shouldSwitch = false)
+            switchToTab(activeTab.id)
+        } else {
+            updateTabCount()
+            TabManager.persist(this)
         }
     }
 
     override fun onNewTabRequested() {
-        saveCurrentTabState()
         val tab = TabManager.newTab(DEFAULT_URL)
-        openTab(tab, shouldSwitch = false)
+        switchToTab(tab.id)
         Toast.makeText(this, "New tab opened", Toast.LENGTH_SHORT).show()
     }
 
     override fun onStop() {
-        saveCurrentTabState()
         super.onStop()
         TabManager.persist(this)
         CookieManager.getInstance().flush()
     }
 
     override fun onDestroy() {
-        binding.webView.apply {
-            stopLoading()
-            destroy()
+        tabWebViews.values.forEach { webView ->
+            webView.stopLoading()
+            webView.destroy()
         }
+        tabWebViews.clear()
         super.onDestroy()
     }
 
-    private inner class BrowserWebViewClient : WebViewClient() {
-        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-            return false
-        }
+    private inner class BrowserWebViewClient(private val tabId: UUID) : WebViewClient() {
+        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = false
 
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
             super.onPageStarted(view, url, favicon)
-            binding.progressBar.visibility = View.VISIBLE
-            binding.etUrl.setText(url.orEmpty())
-            syncActiveTab(url = url, favicon = favicon)
-            updateTabCount()
+            val tab = TabManager.getTabs().firstOrNull { it.id == tabId } ?: return
+            tab.url = url.orEmpty()
+            if (tabId == currentTabId) {
+                binding.progressBar.visibility = View.VISIBLE
+                binding.etUrl.setText(url.orEmpty())
+            }
+            TabManager.persist(this@MainActivity)
         }
 
         override fun onPageFinished(view: WebView?, url: String?) {
             super.onPageFinished(view, url)
-            binding.progressBar.visibility = View.GONE
-            binding.etUrl.setText(url.orEmpty())
-            hideKeyboard()
-            syncActiveTab(url = url, title = view?.title)
-            updateNavigationState()
-            updateTabCount()
+            val tab = TabManager.getTabs().firstOrNull { it.id == tabId } ?: return
+            tab.url = url.orEmpty()
+            tab.title = view?.title.orEmpty().ifBlank { tab.url }
+            tab.favicon = view?.favicon
+
+            if (tabId == currentTabId) {
+                binding.progressBar.visibility = View.GONE
+                binding.etUrl.setText(url.orEmpty())
+                hideKeyboard()
+                updateNavigationState()
+            }
+            TabManager.persist(this@MainActivity)
         }
     }
 
-    private inner class BrowserWebChromeClient : WebChromeClient() {
+    private inner class BrowserWebChromeClient(private val tabId: UUID) : WebChromeClient() {
         override fun onProgressChanged(view: WebView?, newProgress: Int) {
             super.onProgressChanged(view, newProgress)
-            binding.progressBar.progress = newProgress
-            binding.progressBar.visibility = if (newProgress >= 100) View.GONE else View.VISIBLE
+            if (tabId == currentTabId) {
+                binding.progressBar.progress = newProgress
+                binding.progressBar.visibility = if (newProgress >= 100) View.GONE else View.VISIBLE
+            }
         }
 
         override fun onReceivedTitle(view: WebView?, title: String?) {
             super.onReceivedTitle(view, title)
-            syncActiveTab(title = title)
+            val tab = TabManager.getTabs().firstOrNull { it.id == tabId } ?: return
+            if (!title.isNullOrBlank()) tab.title = title
+            TabManager.persist(this@MainActivity)
         }
 
         override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
             super.onReceivedIcon(view, icon)
-            syncActiveTab(favicon = icon)
+            val tab = TabManager.getTabs().firstOrNull { it.id == tabId } ?: return
+            tab.favicon = icon
         }
     }
 
