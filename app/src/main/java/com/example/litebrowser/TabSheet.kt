@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.DefaultItemAnimator
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.GridLayoutManager
@@ -71,7 +72,8 @@ class TabSheet : BottomSheetDialogFragment() {
     }
 
     private fun refreshTabs() {
-        tabAdapter.submitList(TabManager.getTabs())
+        val activeId = TabManager.getActiveTab()?.id
+        tabAdapter.submit(activeId, TabManager.getTabs())
     }
 
     override fun onDestroyView() {
@@ -84,6 +86,13 @@ class TabSheet : BottomSheetDialogFragment() {
         val onClose: (UUID) -> Unit
     ) : ListAdapter<BrowserTab, TabAdapter.TabViewHolder>(TabDiff()) {
 
+        private var activeTabId: UUID? = null
+
+        fun submit(activeTabId: UUID?, tabs: List<BrowserTab>) {
+            this.activeTabId = activeTabId
+            submitList(tabs)
+        }
+
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TabViewHolder {
             val binding = ItemTabCardBinding.inflate(
                 LayoutInflater.from(parent.context),
@@ -94,20 +103,32 @@ class TabSheet : BottomSheetDialogFragment() {
         }
 
         override fun onBindViewHolder(holder: TabViewHolder, position: Int) {
-            holder.bind(getItem(position), onSelect, onClose)
+            val tab = getItem(position)
+            holder.bind(tab, tab.id == activeTabId, onSelect, onClose)
         }
 
         class TabViewHolder(private val binding: ItemTabCardBinding) : RecyclerView.ViewHolder(binding.root) {
-            fun bind(tab: BrowserTab, onSelect: (UUID) -> Unit, onClose: (UUID) -> Unit) {
+            fun bind(tab: BrowserTab, isActive: Boolean, onSelect: (UUID) -> Unit, onClose: (UUID) -> Unit) {
                 binding.tvTitle.text = tab.title.ifBlank { tab.url }
                 binding.ivFavicon.setImageBitmap(tab.favicon)
                 if (tab.favicon == null) {
                     binding.ivFavicon.setImageResource(android.R.drawable.ic_menu_view)
                 }
 
+                val strokeColor = if (isActive) {
+                    ContextCompat.getColor(binding.root.context, R.color.tab_active_ring)
+                } else {
+                    ContextCompat.getColor(binding.root.context, android.R.color.transparent)
+                }
+                binding.root.strokeColor = strokeColor
+                binding.root.strokeWidth = if (isActive) 3.dp(binding.root.context) else 1.dp(binding.root.context)
+
                 binding.root.setOnClickListener { onSelect(tab.id) }
                 binding.btnCloseTab.setOnClickListener { onClose(tab.id) }
             }
+
+            private fun Int.dp(context: android.content.Context): Int =
+                (this * context.resources.displayMetrics.density).toInt()
         }
 
         private class TabDiff : DiffUtil.ItemCallback<BrowserTab>() {

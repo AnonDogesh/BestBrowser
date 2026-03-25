@@ -6,9 +6,11 @@ import android.os.Bundle
 import android.view.KeyEvent
 import android.view.Menu
 import android.view.MenuItem
+import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -18,6 +20,7 @@ import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.widget.doOnTextChanged
 import com.example.litebrowser.databinding.ActivityMainBinding
 import java.net.URLEncoder
 import java.util.UUID
@@ -32,8 +35,9 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        TabManager.initialize(this)
         if (TabManager.getTabs().isEmpty()) {
-            TabManager.newTab("https://www.google.com")
+            TabManager.newTab(DEFAULT_URL)
         }
 
         setupWebView()
@@ -42,7 +46,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         setupOverflowMenus()
         setupBackPressHandler()
 
-        val activeTab = TabManager.getActiveTab() ?: TabManager.newTab("https://www.google.com")
+        val activeTab = TabManager.getActiveTab() ?: TabManager.newTab(DEFAULT_URL)
         updateTabCount()
         loadUrl(activeTab.url)
     }
@@ -63,6 +67,8 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
     }
 
     private fun setupUrlBar() {
+        setupUrlClearAffordance()
+
         binding.etUrl.setOnEditorActionListener { _, actionId, event ->
             val isGoAction = actionId == EditorInfo.IME_ACTION_GO
             val isEnterKey = event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN
@@ -77,6 +83,38 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
                 false
             }
         }
+    }
+
+    private fun setupUrlClearAffordance() {
+        val clearIcon = android.R.drawable.ic_menu_close_clear_cancel
+
+        val updateClearIcon = {
+            val shouldShow = binding.etUrl.hasFocus() && !binding.etUrl.text.isNullOrEmpty()
+            binding.etUrl.setCompoundDrawablesWithIntrinsicBounds(
+                0,
+                0,
+                if (shouldShow) clearIcon else 0,
+                0
+            )
+        }
+
+        binding.etUrl.setOnFocusChangeListener { _, _ -> updateClearIcon() }
+        binding.etUrl.doOnTextChanged { _, _, _, _ -> updateClearIcon() }
+
+        binding.etUrl.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_UP && binding.etUrl.compoundDrawables[2] != null) {
+                val drawableWidth = binding.etUrl.compoundDrawables[2].bounds.width()
+                val isTappedOnEnd = event.x >= (binding.etUrl.width - binding.etUrl.paddingEnd - drawableWidth)
+                if (isTappedOnEnd) {
+                    binding.etUrl.text?.clear()
+                    updateClearIcon()
+                    return@setOnTouchListener true
+                }
+            }
+            false
+        }
+
+        updateClearIcon()
     }
 
     private fun setupNavigationButtons() {
@@ -225,10 +263,12 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         if (!url.isNullOrBlank()) activeTab.url = url
         if (!title.isNullOrBlank()) activeTab.title = title
         if (favicon != null) activeTab.favicon = favicon
+        TabManager.persist(this)
     }
 
     override fun onTabSelected(id: UUID) {
         val tab = TabManager.switchTo(id)
+        TabManager.persist(this)
         updateTabCount()
         loadUrl(tab.url)
     }
@@ -237,8 +277,9 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         val closingActive = TabManager.getActiveTab()?.id == id
         TabManager.closeTab(id)
         if (TabManager.getTabs().isEmpty()) {
-            TabManager.newTab("https://www.google.com")
+            TabManager.newTab(DEFAULT_URL)
         }
+        TabManager.persist(this)
         updateTabCount()
 
         if (closingActive) {
@@ -248,10 +289,17 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
     }
 
     override fun onNewTabRequested() {
-        val tab = TabManager.newTab("https://www.google.com")
+        val tab = TabManager.newTab(DEFAULT_URL)
+        TabManager.persist(this)
         updateTabCount()
         loadUrl(tab.url)
         Toast.makeText(this, "New tab opened", Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        TabManager.persist(this)
+        CookieManager.getInstance().flush()
     }
 
     override fun onDestroy() {
@@ -311,5 +359,6 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         private const val MENU_SHARE = 4
         private const val MENU_DESKTOP_SITE = 5
         private const val TAB_SHEET_TAG = "tab_sheet"
+        private const val DEFAULT_URL = "https://www.google.com"
     }
 }
