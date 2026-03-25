@@ -13,7 +13,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/close_behavior_title"
-            android:textAppearance="@style/TextAppearance.AppCompat.TitleMedium" />
+            android:textAppearance="@style/TextAppearance.AppCompat.Title" />
 
         <RadioGroup
             android:id="@+id/rgCloseBehavior"
@@ -39,7 +39,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
             android:text="@string/open_behavior_title"
-            android:textAppearance="@style/TextAppearance.AppCompat.TitleMedium" />
+            android:textAppearance="@style/TextAppearance.AppCompat.Title" />
 
         <RadioGroup
             android:id="@+id/rgOpenBehavior"
@@ -65,14 +65,14 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
             android:text="@string/search_engine_title"
-            android:textAppearance="@style/TextAppearance.AppCompat.TitleMedium" />
+            android:textAppearance="@style/TextAppearance.AppCompat.Title" />
 
         <TextView
             android:id="@+id/tvSearchEngineValue"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium" />
+            android:textAppearance="@style/TextAppearance.AppCompat.Body1" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSearchEngine"
