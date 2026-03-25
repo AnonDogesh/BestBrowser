@@ -42,8 +42,8 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         setContentView(binding.root)
 
         TabManager.initialize(this)
-        if (TabManager.getTabs().isEmpty()) {
-            TabManager.newTab(DEFAULT_URL)
+        if (!AppSettings.shouldSaveTabsOnExit(this)) {
+            TabManager.clearAll(this)
         }
 
         setupUrlBar()
@@ -51,8 +51,13 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         setupOverflowMenus()
         setupBackPressHandler()
 
-        val activeTab = TabManager.getActiveTab() ?: TabManager.newTab(DEFAULT_URL)
-        switchToTab(activeTab.id)
+        val startupTab = if (AppSettings.shouldOpenLastTab(this) && TabManager.getTabs().isNotEmpty()) {
+            TabManager.getActiveTab()
+        } else {
+            null
+        } ?: TabManager.newTab(getDefaultHomeUrl())
+
+        switchToTab(startupTab.id)
     }
 
     private fun createWebViewForTab(tabId: UUID): WebView {
@@ -146,6 +151,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
                 add(Menu.NONE, MENU_NEW_TAB, Menu.NONE, "New Tab")
                 add(Menu.NONE, MENU_BOOKMARKS, Menu.NONE, "Bookmarks")
                 add(Menu.NONE, MENU_SHARE, Menu.NONE, "Share")
+                add(Menu.NONE, MENU_SETTINGS, Menu.NONE, "Settings")
                 add(Menu.NONE, MENU_DESKTOP_SITE, Menu.NONE, "Desktop Site").apply {
                     isCheckable = true
                     isChecked = desktopSiteEnabled
@@ -169,6 +175,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
             MENU_NEW_TAB -> onNewTabRequested()
             MENU_BOOKMARKS -> Toast.makeText(this, "Bookmarks coming soon", Toast.LENGTH_SHORT).show()
             MENU_SHARE -> shareCurrentUrl()
+            MENU_SETTINGS -> startActivity(Intent(this, SettingsActivity::class.java))
             MENU_DESKTOP_SITE -> {
                 desktopSiteEnabled = !desktopSiteEnabled
                 item.isChecked = desktopSiteEnabled
@@ -220,7 +227,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         return if (isLikelyUrl) {
             if (input.startsWith("http://") || input.startsWith("https://")) input else "https://$input"
         } else {
-            "https://www.google.com/search?q=${URLEncoder.encode(input, Charsets.UTF_8.name())}"
+            "${AppSettings.getSearchEngine(this).queryUrlPrefix}${URLEncoder.encode(input, Charsets.UTF_8.name())}"
         }
     }
 
@@ -246,7 +253,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         currentTabId = tabId
 
         if (webView.url.isNullOrBlank()) {
-            webView.loadUrl(tab.url.ifBlank { DEFAULT_URL })
+            webView.loadUrl(tab.url.ifBlank { getDefaultHomeUrl() })
         } else {
             binding.etUrl.setText(webView.url)
             updateNavigationState()
@@ -286,7 +293,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
 
         TabManager.closeTab(id)
         if (TabManager.getTabs().isEmpty()) {
-            val created = TabManager.newTab(DEFAULT_URL)
+            val created = TabManager.newTab(getDefaultHomeUrl())
             switchToTab(created.id)
             return
         }
@@ -301,14 +308,18 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
     }
 
     override fun onNewTabRequested() {
-        val tab = TabManager.newTab(DEFAULT_URL)
+        val tab = TabManager.newTab(getDefaultHomeUrl())
         switchToTab(tab.id)
         Toast.makeText(this, "New tab opened", Toast.LENGTH_SHORT).show()
     }
 
     override fun onStop() {
         super.onStop()
-        TabManager.persist(this)
+        if (AppSettings.shouldSaveTabsOnExit(this)) {
+            TabManager.persist(this)
+        } else {
+            TabManager.clearAll(this)
+        }
         CookieManager.getInstance().flush()
     }
 
@@ -375,13 +386,16 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         }
     }
 
+
+    private fun getDefaultHomeUrl(): String = AppSettings.getSearchEngine(this).homeUrl
+
     companion object {
         private const val MENU_REFRESH = 1
         private const val MENU_NEW_TAB = 2
         private const val MENU_BOOKMARKS = 3
         private const val MENU_SHARE = 4
-        private const val MENU_DESKTOP_SITE = 5
+        private const val MENU_SETTINGS = 5
+        private const val MENU_DESKTOP_SITE = 6
         private const val TAB_SHEET_TAG = "tab_sheet"
-        private const val DEFAULT_URL = "https://www.google.com"
     }
 }

@@ -72,6 +72,13 @@ object TabManager {
 
     fun getTabs(): List<BrowserTab> = tabs.toList()
 
+
+    fun clearAll(context: Context) {
+        tabs.clear()
+        activeTabIndex = 0
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().apply()
+    }
+
     fun getActiveTab(): BrowserTab? = tabs.getOrNull(activeTabIndex)
 
     fun newTab(url: String): BrowserTab {
