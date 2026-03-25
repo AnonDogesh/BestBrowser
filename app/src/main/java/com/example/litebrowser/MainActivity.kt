@@ -257,8 +257,6 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
     override fun onDestroy() {
         binding.webView.apply {
             stopLoading()
-            webChromeClient = null
-            webViewClient = null
             destroy()
         }
         super.onDestroy()
