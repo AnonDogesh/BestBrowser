@@ -1,5 +1,7 @@
 package com.example.litebrowser
 
+import android.content.Intent
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.Menu
@@ -18,8 +20,9 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import com.example.litebrowser.databinding.ActivityMainBinding
 import java.net.URLEncoder
+import java.util.UUID
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), TabSheet.Callback {
 
     private lateinit var binding: ActivityMainBinding
     private var desktopSiteEnabled = false
@@ -29,13 +32,19 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        if (TabManager.getTabs().isEmpty()) {
+            TabManager.newTab("https://www.google.com")
+        }
+
         setupWebView()
         setupUrlBar()
         setupNavigationButtons()
         setupOverflowMenus()
         setupBackPressHandler()
 
-        loadUrl("https://www.google.com")
+        val activeTab = TabManager.getActiveTab() ?: TabManager.newTab("https://www.google.com")
+        updateTabCount()
+        loadUrl(activeTab.url)
     }
 
     @Suppress("SetJavaScriptEnabled")
@@ -88,7 +97,7 @@ class MainActivity : AppCompatActivity() {
         binding.navForward.setOnClickListener { goForward() }
 
         binding.navTabs.setOnClickListener {
-            Toast.makeText(this, "Tab manager coming soon", Toast.LENGTH_SHORT).show()
+            TabSheet().show(supportFragmentManager, TAB_SHEET_TAG)
         }
 
         updateNavigationState()
@@ -122,7 +131,7 @@ class MainActivity : AppCompatActivity() {
     private fun handleMenuItem(item: MenuItem) {
         when (item.itemId) {
             MENU_REFRESH -> binding.webView.reload()
-            MENU_NEW_TAB -> Toast.makeText(this, "New tab coming soon", Toast.LENGTH_SHORT).show()
+            MENU_NEW_TAB -> onNewTabRequested()
             MENU_BOOKMARKS -> Toast.makeText(this, "Bookmarks coming soon", Toast.LENGTH_SHORT).show()
             MENU_SHARE -> shareCurrentUrl()
             MENU_DESKTOP_SITE -> {
@@ -138,11 +147,11 @@ class MainActivity : AppCompatActivity() {
         val url = binding.webView.url ?: binding.etUrl.text?.toString().orEmpty()
         if (url.isBlank()) return
 
-        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(android.content.Intent.EXTRA_TEXT, url)
+            putExtra(Intent.EXTRA_TEXT, url)
         }
-        startActivity(android.content.Intent.createChooser(intent, "Share link"))
+        startActivity(Intent.createChooser(intent, "Share link"))
     }
 
     private fun setDesktopMode(enabled: Boolean) {
@@ -207,6 +216,44 @@ class MainActivity : AppCompatActivity() {
         binding.navForward.alpha = if (canGoForward) 1f else 0.4f
     }
 
+    private fun updateTabCount() {
+        binding.tabCount.text = TabManager.getTabs().size.toString()
+    }
+
+    private fun syncActiveTab(url: String? = binding.webView.url, title: String? = binding.webView.title, favicon: Bitmap? = null) {
+        val activeTab = TabManager.getActiveTab() ?: return
+        if (!url.isNullOrBlank()) activeTab.url = url
+        if (!title.isNullOrBlank()) activeTab.title = title
+        if (favicon != null) activeTab.favicon = favicon
+    }
+
+    override fun onTabSelected(id: UUID) {
+        val tab = TabManager.switchTo(id)
+        updateTabCount()
+        loadUrl(tab.url)
+    }
+
+    override fun onTabClosed(id: UUID) {
+        val closingActive = TabManager.getActiveTab()?.id == id
+        TabManager.closeTab(id)
+        if (TabManager.getTabs().isEmpty()) {
+            TabManager.newTab("https://www.google.com")
+        }
+        updateTabCount()
+
+        if (closingActive) {
+            val activeTab = TabManager.getActiveTab() ?: return
+            loadUrl(activeTab.url)
+        }
+    }
+
+    override fun onNewTabRequested() {
+        val tab = TabManager.newTab("https://www.google.com")
+        updateTabCount()
+        loadUrl(tab.url)
+        Toast.makeText(this, "New tab opened", Toast.LENGTH_SHORT).show()
+    }
+
     override fun onDestroy() {
         binding.webView.apply {
             stopLoading()
@@ -222,10 +269,12 @@ class MainActivity : AppCompatActivity() {
             return false
         }
 
-        override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
             super.onPageStarted(view, url, favicon)
             binding.progressBar.visibility = View.VISIBLE
             binding.etUrl.setText(url.orEmpty())
+            syncActiveTab(url = url, favicon = favicon)
+            updateTabCount()
         }
 
         override fun onPageFinished(view: WebView?, url: String?) {
@@ -233,7 +282,9 @@ class MainActivity : AppCompatActivity() {
             binding.progressBar.visibility = View.GONE
             binding.etUrl.setText(url.orEmpty())
             hideKeyboard()
+            syncActiveTab(url = url, title = view?.title)
             updateNavigationState()
+            updateTabCount()
         }
     }
 
@@ -243,6 +294,16 @@ class MainActivity : AppCompatActivity() {
             binding.progressBar.progress = newProgress
             binding.progressBar.visibility = if (newProgress >= 100) View.GONE else View.VISIBLE
         }
+
+        override fun onReceivedTitle(view: WebView?, title: String?) {
+            super.onReceivedTitle(view, title)
+            syncActiveTab(title = title)
+        }
+
+        override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
+            super.onReceivedIcon(view, icon)
+            syncActiveTab(favicon = icon)
+        }
     }
 
     companion object {
@@ -251,5 +312,6 @@ class MainActivity : AppCompatActivity() {
         private const val MENU_BOOKMARKS = 3
         private const val MENU_SHARE = 4
         private const val MENU_DESKTOP_SITE = 5
+        private const val TAB_SHEET_TAG = "tab_sheet"
     }
 }
