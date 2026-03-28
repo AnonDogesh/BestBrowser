@@ -51,6 +51,9 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         setupOverflowMenus()
         setupBackPressHandler()
 
+        AdBlocker.init(this)
+        AdBlocker.updateFromRemote(this)
+
         val startupTab = if (AppSettings.shouldOpenLastTab(this) && TabManager.getTabs().isNotEmpty()) {
             TabManager.getActiveTab()
         } else {
@@ -333,7 +336,31 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
     }
 
     private inner class BrowserWebViewClient(private val tabId: UUID) : WebViewClient() {
-        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = false
+        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): android.webkit.WebResourceResponse? {
+            val reqUrl = request.url.toString()
+            val pageUrl = view.url ?: ""
+            if (AdBlocker.shouldBlock(reqUrl, pageUrl)) {
+                AdBlocker.incrementBlockedCount(this@MainActivity)
+                return android.webkit.WebResourceResponse("text/plain", "utf-8", null)
+            }
+            return super.shouldInterceptRequest(view, request)
+        }
+
+        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+            val uri = request.url
+            val host = uri.host ?: return false
+            if (AdBlocker.REDIRECT_HOSTS.any { host.contains(it) }) {
+                val dest = uri.getQueryParameter("url")
+                    ?: uri.getQueryParameter("adurl")
+                    ?: uri.getQueryParameter("q")
+                if (dest != null) {
+                    view.loadUrl(dest)
+                    return true
+                }
+                return true
+            }
+            return false
+        }
 
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
             super.onPageStarted(view, url, favicon)
@@ -359,11 +386,40 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
                 hideKeyboard()
                 updateNavigationState()
             }
+            getSharedPreferences("adblock_prefs", MODE_PRIVATE).edit().putString("last_page_url", url.orEmpty()).apply()
+
+            AdBlocker.getCosmeticCSS()?.let { css ->
+                val escaped = css
+                    .replace("\\", "\\\\")
+                    .replace("'", "\\'")
+                    .replace("\n", "\\n")
+                view?.evaluateJavascript(
+                    """
+                    (function(){
+                        var s = document.createElement('style');
+                        s.textContent = '$escaped';
+                        document.head.appendChild(s);
+                    })();
+                    """.trimIndent(),
+                    null
+                )
+            }
+            view?.evaluateJavascript(AdBlocker.getJsHardening(), null)
             TabManager.persist(this@MainActivity)
         }
     }
 
     private inner class BrowserWebChromeClient(private val tabId: UUID) : WebChromeClient() {
+        override fun onCreateWindow(
+            view: WebView,
+            isDialog: Boolean,
+            isUserGesture: Boolean,
+            resultMsg: android.os.Message?
+        ): Boolean {
+            if (!isUserGesture) return false
+            return false
+        }
+
         override fun onProgressChanged(view: WebView?, newProgress: Int) {
             super.onProgressChanged(view, newProgress)
             if (tabId == currentTabId) {
@@ -388,6 +444,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
 
 
     private fun getDefaultHomeUrl(): String = AppSettings.getSearchEngine(this).homeUrl
+
 
     companion object {
         private const val MENU_REFRESH = 1

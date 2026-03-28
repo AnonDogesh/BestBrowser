@@ -19,4 +19,5 @@
     <string name="open_behavior_new">Open a new tab</string>
     <string name="search_engine_title">Search engine</string>
     <string name="search_engine_change">Choose search engine</string>
+    <string name="adblock_settings_title">Ad Block Settings</string>
 </resources>

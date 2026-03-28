@@ -81,5 +81,13 @@
             android:layout_marginTop="12dp"
             android:text="@string/search_engine_change" />
 
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAdblockSettings"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/adblock_settings_title" />
+
     </LinearLayout>
 </ScrollView>

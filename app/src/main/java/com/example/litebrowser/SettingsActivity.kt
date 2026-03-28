@@ -1,5 +1,6 @@
 package com.example.litebrowser
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.Menu
 import android.widget.PopupMenu
@@ -20,6 +21,9 @@ class SettingsActivity : AppCompatActivity() {
 
         initBehaviorControls()
         initSearchEngineControl()
+        binding.btnAdblockSettings.setOnClickListener {
+            startActivity(Intent(this, AdBlockSettingsActivity::class.java))
+        }
     }
 
     override fun onSupportNavigateUp(): Boolean {
