@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <ImageView
+        android:id="@+id/ivPreview"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
+        android:layout_gravity="center_horizontal"
+        android:background="@drawable/bg_preview_rounded"
+        android:clipToOutline="true"
+        android:scaleType="centerCrop" />
+
+    <LinearLayout
+        android:id="@+id/btnNewTab"
+        style="@style/ImageActionRowStyle">
+        <ImageView android:layout_width="24dp" android:layout_height="24dp" android:src="@android:drawable/ic_menu_view" />
+        <TextView style="@style/ImageActionTextStyle" android:text="View in new tab" />
+    </LinearLayout>
+
+    <View style="@style/ImageActionDividerStyle" />
+
+    <LinearLayout
+        android:id="@+id/btnImageViewer"
+        style="@style/ImageActionRowStyle">
+        <ImageView android:layout_width="24dp" android:layout_height="24dp" android:src="@android:drawable/ic_menu_gallery" />
+        <TextView style="@style/ImageActionTextStyle" android:text="Open in image viewer" />
+    </LinearLayout>
+
+    <View style="@style/ImageActionDividerStyle" />
+
+    <LinearLayout
+        android:id="@+id/btnDownload"
+        style="@style/ImageActionRowStyle">
+        <ImageView android:layout_width="24dp" android:layout_height="24dp" android:src="@android:drawable/stat_sys_download_done" />
+        <TextView style="@style/ImageActionTextStyle" android:text="Download image" />
+    </LinearLayout>
+
+    <View style="@style/ImageActionDividerStyle" />
+
+    <LinearLayout
+        android:id="@+id/btnShare"
+        style="@style/ImageActionRowStyle">
+        <ImageView android:layout_width="24dp" android:layout_height="24dp" android:src="@android:drawable/ic_menu_share" />
+        <TextView style="@style/ImageActionTextStyle" android:text="Share image" />
+    </LinearLayout>
+
+    <View style="@style/ImageActionDividerStyle" />
+
+    <LinearLayout
+        android:id="@+id/btnClose"
+        style="@style/ImageActionRowStyle">
+        <ImageView android:layout_width="24dp" android:layout_height="24dp" android:tint="#D32F2F" android:src="@android:drawable/ic_menu_close_clear_cancel" />
+        <TextView style="@style/ImageActionTextStyle" android:textColor="#D32F2F" android:text="Close" />
+    </LinearLayout>
+
+</LinearLayout>

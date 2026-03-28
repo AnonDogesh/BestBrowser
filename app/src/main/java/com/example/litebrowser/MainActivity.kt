@@ -1,7 +1,10 @@
 package com.example.litebrowser
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.Menu
@@ -20,18 +23,32 @@ import android.webkit.WebViewClient
 import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.widget.doOnTextChanged
 import com.example.litebrowser.databinding.ActivityMainBinding
 import java.net.URLEncoder
 import java.util.UUID
 
-class MainActivity : AppCompatActivity(), TabSheet.Callback {
+class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
 
     private lateinit var binding: ActivityMainBinding
     private var desktopSiteEnabled = false
     private val tabWebViews = mutableMapOf<UUID, WebView>()
     private var currentTabId: UUID? = null
+
+    private val imageBridge = ImageJsBridge { imageUrl ->
+        ImageActionSheet.newInstance(imageUrl).show(supportFragmentManager, "imageAction")
+    }
+    private var pendingDownloadUrl: String? = null
+    private val storagePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val url = pendingDownloadUrl
+        pendingDownloadUrl = null
+        if (granted && url != null) DownloadUtil.downloadImage(this, url)
+    }
 
     private val currentWebView: WebView?
         get() = currentTabId?.let { tabWebViews[it] }
@@ -80,6 +97,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
                 mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             }
 
+            addJavascriptInterface(imageBridge, "ImageJsBridge")
             webViewClient = BrowserWebViewClient(tabId)
             webChromeClient = BrowserWebChromeClient(tabId)
         }
@@ -316,6 +334,23 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         Toast.makeText(this, "New tab opened", Toast.LENGTH_SHORT).show()
     }
 
+    override fun openInNewTab(url: String) {
+        val tab = TabManager.newTab(url)
+        switchToTab(tab.id)
+    }
+
+
+    fun downloadImageWithPermission(url: String) {
+        if (Build.VERSION.SDK_INT <= 28 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingDownloadUrl = url
+            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            return
+        }
+        DownloadUtil.downloadImage(this, url)
+    }
+
     override fun onStop() {
         super.onStop()
         if (AppSettings.shouldSaveTabsOnExit(this)) {
@@ -414,6 +449,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
                 )
             }
             view?.evaluateJavascript(AdBlocker.getJsHardening(), null)
+            view?.evaluateJavascript(ImageJsInjector.IMAGE_LONGPRESS_JS, null)
             TabManager.persist(this@MainActivity)
         }
     }
