@@ -16,9 +16,9 @@ class DownloadsActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityDownloadsBinding
     private val adapter = DownloadAdapter(
-        onPause = { DownloadCenter.pause(it.id) },
+        onPause = { DownloadCenter.pause(this, it.id) },
         onResume = { DownloadCenter.resume(this, it.id) },
-        onCancel = { DownloadCenter.cancel(it.id) },
+        onCancel = { DownloadCenter.cancel(this, it.id) },
         onOpen = { item ->
             if (item.status == DownloadStatus.COMPLETED && item.filePath != null) {
                 val file = File(item.filePath)
@@ -36,6 +36,7 @@ class DownloadsActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         binding.btnBack.setOnClickListener { finish() }
+        DownloadCenter.init(this)
 
         binding.rvDownloads.layoutManager = LinearLayoutManager(this)
         binding.rvDownloads.adapter = adapter
