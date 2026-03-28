@@ -51,8 +51,8 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
         setupOverflowMenus()
         setupBackPressHandler()
 
-        AdBlocker.init(this)
-        AdBlocker.updateFromRemote(this)
+        runCatching { AdBlocker.init(this) }
+        runCatching { AdBlocker.updateFromRemote(this) }
 
         val startupTab = if (AppSettings.shouldOpenLastTab(this) && TabManager.getTabs().isNotEmpty()) {
             TabManager.getActiveTab()
@@ -337,13 +337,22 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback {
 
     private inner class BrowserWebViewClient(private val tabId: UUID) : WebViewClient() {
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): android.webkit.WebResourceResponse? {
-            val reqUrl = request.url.toString()
-            val pageUrl = view.url ?: ""
-            if (AdBlocker.shouldBlock(reqUrl, pageUrl)) {
-                AdBlocker.incrementBlockedCount(this@MainActivity)
-                return android.webkit.WebResourceResponse("text/plain", "utf-8", null)
+            return try {
+                val reqUrl = request.url.toString()
+                val pageUrl = view.url ?: ""
+                if (AdBlocker.shouldBlock(reqUrl, pageUrl)) {
+                    AdBlocker.incrementBlockedCount(this@MainActivity)
+                    android.webkit.WebResourceResponse(
+                        "text/plain",
+                        "utf-8",
+                        java.io.ByteArrayInputStream(ByteArray(0))
+                    )
+                } else {
+                    super.shouldInterceptRequest(view, request)
+                }
+            } catch (_: Exception) {
+                super.shouldInterceptRequest(view, request)
             }
-            return super.shouldInterceptRequest(view, request)
         }
 
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {

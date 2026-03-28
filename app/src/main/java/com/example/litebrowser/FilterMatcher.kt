@@ -26,8 +26,8 @@ class FilterMatcher(rules: List<FilterRule>) {
         }
     }
 
-    fun shouldBlock(requestUrl: String, pageUrl: String): Boolean {
-        val requestHost = hostOf(requestUrl) ?: return false
+    fun shouldBlock(requestUrl: String, pageUrl: String): Boolean = runCatching {
+        val requestHost = hostOf(requestUrl) ?: return@runCatching false
         val pageHost = hostOf(pageUrl).orEmpty()
         val key = hash6(requestHost)
 
@@ -37,11 +37,11 @@ class FilterMatcher(rules: List<FilterRule>) {
         }
 
         val exceptions = candidates.filter { it.isException }
-        if (exceptions.any { matchesRule(it, requestUrl, requestHost, pageHost) }) return false
+        if (exceptions.any { matchesRule(it, requestUrl, requestHost, pageHost) }) return@runCatching false
 
         val blockRules = candidates.filterNot { it.isException }
-        return blockRules.any { matchesRule(it, requestUrl, requestHost, pageHost) }
-    }
+        blockRules.any { matchesRule(it, requestUrl, requestHost, pageHost) }
+    }.getOrDefault(false)
 
     private fun matchesRule(rule: FilterRule, requestUrl: String, requestHost: String, pageHost: String): Boolean {
         if (rule.domains.isNotEmpty() && rule.domains.none { pageHost == it || pageHost.endsWith(".$it") }) {
@@ -78,7 +78,7 @@ class FilterMatcher(rules: List<FilterRule>) {
             .replace(".", "\\.")
             .replace("^", "[^A-Za-z0-9_\\-.%]")
             .replace("*", ".*")
-        return Regex(regex).containsMatchIn(value)
+        return runCatching { Regex(regex).containsMatchIn(value) }.getOrDefault(false)
     }
 
     private fun hostOf(url: String): String? = runCatching { Uri.parse(url).host?.lowercase() }.getOrNull()
