@@ -8,7 +8,6 @@ import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.Menu
-import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -65,13 +64,16 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
 
         setupUrlBar()
         setupNavigationButtons()
-        setupOverflowMenus()
+        setupBookmarkMenu()
         setupBackPressHandler()
 
         runCatching { AdBlocker.init(this) }
         runCatching { AdBlocker.updateFromRemote(this) }
 
-        val startupTab = if (AppSettings.shouldOpenLastTab(this) && TabManager.getTabs().isNotEmpty()) {
+        val startupUrl = intent?.getStringExtra(BookmarksActivity.EXTRA_OPEN_URL)
+        val startupTab = if (startupUrl != null) {
+            TabManager.newTab(startupUrl)
+        } else if (AppSettings.shouldOpenLastTab(this) && TabManager.getTabs().isNotEmpty()) {
             TabManager.getActiveTab()
         } else {
             null
@@ -160,63 +162,38 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
         binding.navTabs.setOnClickListener {
             TabSheet().show(supportFragmentManager, TAB_SHEET_TAG)
         }
+        binding.navTabs.setOnLongClickListener {
+            startActivity(Intent(this, BookmarksActivity::class.java))
+            true
+        }
 
         updateNavigationState()
     }
 
-    private fun setupOverflowMenus() {
-        val showMenu = { anchor: View ->
+    private fun setupBookmarkMenu() {
+        binding.btnOverflow.setOnClickListener { anchor ->
             val popupMenu = PopupMenu(this, anchor)
-            popupMenu.menu.apply {
-                add(Menu.NONE, MENU_REFRESH, Menu.NONE, "Refresh")
-                add(Menu.NONE, MENU_NEW_TAB, Menu.NONE, "New Tab")
-                add(Menu.NONE, MENU_BOOKMARKS, Menu.NONE, "Bookmarks")
-                add(Menu.NONE, MENU_SHARE, Menu.NONE, "Share")
-                add(Menu.NONE, MENU_DOWNLOADS, Menu.NONE, "Downloads")
-                add(Menu.NONE, MENU_SETTINGS, Menu.NONE, "Settings")
-                add(Menu.NONE, MENU_DESKTOP_SITE, Menu.NONE, "Desktop Site").apply {
-                    isCheckable = true
-                    isChecked = desktopSiteEnabled
-                }
-            }
-
+            popupMenu.menu.add(Menu.NONE, MENU_ADD_BOOKMARK, Menu.NONE, "Add this to bookmarks")
             popupMenu.setOnMenuItemClickListener { item ->
-                handleMenuItem(item)
+                if (item.itemId == MENU_ADD_BOOKMARK) {
+                    addCurrentToBookmarks()
+                }
                 true
             }
             popupMenu.show()
         }
-
-        binding.btnOverflow.setOnClickListener { showMenu(it) }
-        binding.navMenu.setOnClickListener { showMenu(it) }
-    }
-
-    private fun handleMenuItem(item: MenuItem) {
-        when (item.itemId) {
-            MENU_REFRESH -> currentWebView?.reload()
-            MENU_NEW_TAB -> onNewTabRequested()
-            MENU_BOOKMARKS -> Toast.makeText(this, "Bookmarks coming soon", Toast.LENGTH_SHORT).show()
-            MENU_SHARE -> shareCurrentUrl()
-            MENU_DOWNLOADS -> startActivity(Intent(this, DownloadsActivity::class.java))
-            MENU_SETTINGS -> startActivity(Intent(this, SettingsActivity::class.java))
-            MENU_DESKTOP_SITE -> {
-                desktopSiteEnabled = !desktopSiteEnabled
-                item.isChecked = desktopSiteEnabled
-                tabWebViews.values.forEach { setDesktopMode(it, desktopSiteEnabled) }
-                currentWebView?.reload()
-            }
+        binding.btnOverflow.setOnLongClickListener {
+            startActivity(Intent(this, BookmarksActivity::class.java))
+            true
         }
     }
 
-    private fun shareCurrentUrl() {
-        val url = currentWebView?.url ?: binding.etUrl.text?.toString().orEmpty()
-        if (url.isBlank()) return
-
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, url)
-        }
-        startActivity(Intent.createChooser(intent, "Share link"))
+    private fun addCurrentToBookmarks() {
+        val webView = currentWebView ?: return
+        val url = webView.url?.takeIf { it.isNotBlank() } ?: return
+        val title = webView.title.orEmpty().ifBlank { url }
+        BookmarkStore.add(this, title, url)
+        Toast.makeText(this, "Added to bookmarks", Toast.LENGTH_SHORT).show()
     }
 
     private fun setDesktopMode(webView: WebView, enabled: Boolean) {
@@ -451,9 +428,16 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
                 )
             }
             view?.evaluateJavascript(AdBlocker.getJsHardening(), null)
-            view?.evaluateJavascript(ImageJsInjector.IMAGE_LONGPRESS_JS, null)
+            injectImageLongPress(view)
             TabManager.persist(this@MainActivity)
         }
+    }
+
+    private fun injectImageLongPress(view: WebView?) {
+        view ?: return
+        view.evaluateJavascript(ImageJsInjector.IMAGE_LONGPRESS_JS, null)
+        view.postDelayed({ view.evaluateJavascript(ImageJsInjector.IMAGE_LONGPRESS_JS, null) }, 400)
+        view.postDelayed({ view.evaluateJavascript(ImageJsInjector.IMAGE_LONGPRESS_JS, null) }, 1200)
     }
 
     private inner class BrowserWebChromeClient(private val tabId: UUID) : WebChromeClient() {
@@ -494,13 +478,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
 
 
     companion object {
-        private const val MENU_REFRESH = 1
-        private const val MENU_NEW_TAB = 2
-        private const val MENU_BOOKMARKS = 3
-        private const val MENU_SHARE = 4
-        private const val MENU_DOWNLOADS = 5
-        private const val MENU_SETTINGS = 6
-        private const val MENU_DESKTOP_SITE = 7
+        private const val MENU_ADD_BOOKMARK = 1
         private const val TAB_SHEET_TAG = "tab_sheet"
     }
 }

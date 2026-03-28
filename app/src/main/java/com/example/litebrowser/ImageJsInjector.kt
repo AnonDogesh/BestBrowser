@@ -18,6 +18,16 @@ object ImageJsInjector {
               return /\.(jpg|jpeg|png|gif|webp|avif|svg)(\?|#|$)/i.test(url || '');
             }
 
+            function maybeExtractGoogleImage(url) {
+              if (!url) return '';
+              try {
+                const u = new URL(url, location.href);
+                const imgParam = u.searchParams.get('imgurl') || u.searchParams.get('mediaurl');
+                if (imgParam) return imgParam;
+              } catch (_) {}
+              return '';
+            }
+
             function resolveImageUrl(img) {
               if (!img) return '';
               let url = img.currentSrc || img.src || '';
@@ -39,7 +49,14 @@ object ImageJsInjector {
               if (!url) {
                 const a = img.closest('a[href]');
                 const href = a ? a.href : '';
+                const extracted = maybeExtractGoogleImage(href);
+                if (extracted) url = extracted;
                 if (looksLikeImageUrl(href)) url = href;
+              }
+
+              if (!url) {
+                const extractedFromSrc = maybeExtractGoogleImage(img.src || '');
+                if (extractedFromSrc) url = extractedFromSrc;
               }
 
               return url || '';

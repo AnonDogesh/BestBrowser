@@ -16,6 +16,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.net.URLDecoder
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -61,7 +62,7 @@ object DownloadCenter {
     fun start(context: Context, url: String): String {
         init(context)
         val id = UUID.randomUUID().toString()
-        val filename = url.substringAfterLast('/').substringBefore('?').ifBlank { "file_${System.currentTimeMillis()}" }
+        val filename = initialFileName(url)
         val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "LiteBrowser")
         dir.mkdirs()
         val file = File(dir, filename)
@@ -121,8 +122,27 @@ object DownloadCenter {
                 val res = call.execute()
                 val body = res.body ?: throw IllegalStateException("Empty response")
                 val total = if (body.contentLength() > 0) body.contentLength() + offset else -1L
+                val contentType = body.contentType()?.toString().orEmpty()
+                if (offset == 0L) {
+                    val updatedName = betterFileName(item.url, res.header("Content-Disposition"), contentType)
+                    if (updatedName != file.name) {
+                        val renamed = File(file.parentFile, updatedName)
+                        if (!renamed.exists()) {
+                            _downloads.update { list ->
+                                list.map {
+                                    if (it.id == id) it.copy(fileName = updatedName, filePath = renamed.absolutePath) else it
+                                }
+                            }
+                            file.delete()
+                            renamed.createNewFile()
+                            persist(context)
+                        }
+                    }
+                }
+                val targetPath = _downloads.value.firstOrNull { it.id == id }?.filePath ?: file.absolutePath
+                val targetFile = File(targetPath)
 
-                FileOutputStream(file, offset > 0).use { fos ->
+                FileOutputStream(targetFile, offset > 0).use { fos ->
                     val input = body.byteStream()
                     val buf = ByteArray(16 * 1024)
                     var read: Int
@@ -177,4 +197,35 @@ object DownloadCenter {
 
     private const val PREFS = "download_center"
     private const val KEY_LIST = "download_list"
+
+    private fun initialFileName(url: String): String {
+        val base = URLDecoder.decode(url.substringAfterLast('/').substringBefore('?'), Charsets.UTF_8.name())
+            .ifBlank { "image_${System.currentTimeMillis()}" }
+            .take(80)
+        return if (base.contains('.')) base else "$base.jpg"
+    }
+
+    private fun betterFileName(url: String, contentDisposition: String?, contentType: String): String {
+        val fromHeader = contentDisposition
+            ?.substringAfter("filename=", "")
+            ?.trim('"', '\'', ' ')
+            ?.takeIf { it.isNotBlank() }
+        if (fromHeader != null) return fromHeader
+
+        val base = URLDecoder.decode(url.substringAfterLast('/').substringBefore('?'), Charsets.UTF_8.name())
+            .ifBlank { "image_${System.currentTimeMillis()}" }
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .take(80)
+
+        if (base.contains('.')) return base
+        val ext = when {
+            contentType.contains("png", ignoreCase = true) -> ".png"
+            contentType.contains("webp", ignoreCase = true) -> ".webp"
+            contentType.contains("gif", ignoreCase = true) -> ".gif"
+            contentType.contains("avif", ignoreCase = true) -> ".avif"
+            contentType.contains("svg", ignoreCase = true) -> ".svg"
+            else -> ".jpg"
+        }
+        return "$base$ext"
+    }
 }

@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.Menu
 import android.view.View
 import android.widget.PopupMenu
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -23,6 +24,16 @@ class DownloadsActivity : AppCompatActivity() {
         onResume = { DownloadCenter.resume(this, it.id) },
         onCancel = { DownloadCenter.cancel(this, it.id) },
         onDelete = { DownloadCenter.delete(this, it.id) },
+        onLongDelete = { item ->
+            AlertDialog.Builder(this)
+                .setTitle("Delete download")
+                .setMessage("Delete this downloaded file?")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Delete") { _, _ ->
+                    DownloadCenter.delete(this, item.id)
+                }
+                .show()
+        },
         onOpen = { item ->
             if (item.status == DownloadStatus.COMPLETED && item.filePath != null) {
                 val file = File(item.filePath)
@@ -59,6 +70,7 @@ private class DownloadAdapter(
     val onResume: (DownloadItem) -> Unit,
     val onCancel: (DownloadItem) -> Unit,
     val onDelete: (DownloadItem) -> Unit,
+    val onLongDelete: (DownloadItem) -> Unit,
     val onOpen: (DownloadItem) -> Unit
 ) : RecyclerView.Adapter<DownloadVH>() {
 
@@ -78,7 +90,7 @@ private class DownloadAdapter(
 
     override fun onBindViewHolder(holder: DownloadVH, position: Int) {
         val item = items[position]
-        holder.bind(item, onPause, onResume, onCancel, onDelete, onOpen)
+        holder.bind(item, onPause, onResume, onCancel, onDelete, onLongDelete, onOpen)
     }
 }
 
@@ -89,6 +101,7 @@ private class DownloadVH(private val b: ItemDownloadBinding) : RecyclerView.View
         onResume: (DownloadItem) -> Unit,
         onCancel: (DownloadItem) -> Unit,
         onDelete: (DownloadItem) -> Unit,
+        onLongDelete: (DownloadItem) -> Unit,
         onOpen: (DownloadItem) -> Unit
     ) {
         b.tvName.text = item.fileName
@@ -104,6 +117,10 @@ private class DownloadVH(private val b: ItemDownloadBinding) : RecyclerView.View
             showMenu(anchor, item, onPause, onResume, onCancel, onDelete)
         }
         b.root.setOnClickListener { onOpen(item) }
+        b.root.setOnLongClickListener {
+            onLongDelete(item)
+            true
+        }
     }
 
     private fun showMenu(

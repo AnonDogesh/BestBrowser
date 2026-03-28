@@ -118,7 +118,7 @@
             android:layout_height="48dp"
             android:layout_marginStart="16dp"
             app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toStartOf="@id/navMenu"
+            app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toEndOf="@id/navForward"
             app:layout_constraintTop_toTopOf="parent">
 
@@ -145,21 +145,6 @@
                 android:textColor="#FFFFFF"
                 android:textSize="12sp" />
         </FrameLayout>
-
-        <ImageButton
-            android:id="@+id/navMenu"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginStart="16dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/cd_menu"
-            android:padding="12dp"
-            android:src="@drawable/ic_menu"
-            android:tint="#1a73e8"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@id/tabsContainer"
-            app:layout_constraintTop_toTopOf="parent" />
     </androidx.constraintlayout.widget.ConstraintLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
