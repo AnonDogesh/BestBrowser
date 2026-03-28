@@ -36,6 +36,8 @@ class ImageViewerFragment : DialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         val url = requireArguments().getString("imageUrl") ?: return
 
+        val isLocal = url.startsWith("file://")
+        binding.btnDownload.isVisible = !isLocal
         binding.progressBar.isVisible = true
         binding.photoView.maximumScale = 8f
         binding.photoView.minimumScale = 0.8f

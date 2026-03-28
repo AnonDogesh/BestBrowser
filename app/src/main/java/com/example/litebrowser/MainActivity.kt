@@ -172,6 +172,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
                 add(Menu.NONE, MENU_NEW_TAB, Menu.NONE, "New Tab")
                 add(Menu.NONE, MENU_BOOKMARKS, Menu.NONE, "Bookmarks")
                 add(Menu.NONE, MENU_SHARE, Menu.NONE, "Share")
+                add(Menu.NONE, MENU_DOWNLOADS, Menu.NONE, "Downloads")
                 add(Menu.NONE, MENU_SETTINGS, Menu.NONE, "Settings")
                 add(Menu.NONE, MENU_DESKTOP_SITE, Menu.NONE, "Desktop Site").apply {
                     isCheckable = true
@@ -196,6 +197,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
             MENU_NEW_TAB -> onNewTabRequested()
             MENU_BOOKMARKS -> Toast.makeText(this, "Bookmarks coming soon", Toast.LENGTH_SHORT).show()
             MENU_SHARE -> shareCurrentUrl()
+            MENU_DOWNLOADS -> startActivity(Intent(this, DownloadsActivity::class.java))
             MENU_SETTINGS -> startActivity(Intent(this, SettingsActivity::class.java))
             MENU_DESKTOP_SITE -> {
                 desktopSiteEnabled = !desktopSiteEnabled
@@ -496,8 +498,9 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
         private const val MENU_NEW_TAB = 2
         private const val MENU_BOOKMARKS = 3
         private const val MENU_SHARE = 4
-        private const val MENU_SETTINGS = 5
-        private const val MENU_DESKTOP_SITE = 6
+        private const val MENU_DOWNLOADS = 5
+        private const val MENU_SETTINGS = 6
+        private const val MENU_DESKTOP_SITE = 7
         private const val TAB_SHEET_TAG = "tab_sheet"
     }
 }
