@@ -178,10 +178,19 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
     }
 
     private fun setupOverflowMenus() {
-        val showMenu = { anchor: View ->
+        binding.btnOverflow.setOnClickListener { anchor ->
+            val popupMenu = PopupMenu(this, anchor)
+            popupMenu.menu.add(Menu.NONE, MENU_ADD_BOOKMARK, Menu.NONE, "Add this to bookmarks")
+            popupMenu.setOnMenuItemClickListener { item ->
+                handleMenuItem(item)
+                true
+            }
+            popupMenu.show()
+        }
+
+        binding.navMenu.setOnClickListener { anchor ->
             val popupMenu = PopupMenu(this, anchor)
             popupMenu.menu.apply {
-                add(Menu.NONE, MENU_ADD_BOOKMARK, Menu.NONE, "Add this to bookmarks")
                 add(Menu.NONE, MENU_REFRESH, Menu.NONE, "Refresh")
                 add(Menu.NONE, MENU_NEW_TAB, Menu.NONE, "New Tab")
                 add(Menu.NONE, MENU_BOOKMARKS, Menu.NONE, "Bookmarks")
@@ -193,16 +202,12 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
                     isChecked = desktopSiteEnabled
                 }
             }
-
             popupMenu.setOnMenuItemClickListener { item ->
                 handleMenuItem(item)
                 true
             }
             popupMenu.show()
         }
-
-        binding.btnOverflow.setOnClickListener { showMenu(it) }
-        binding.navMenu.setOnClickListener { showMenu(it) }
     }
 
     private fun handleMenuItem(item: MenuItem) {
