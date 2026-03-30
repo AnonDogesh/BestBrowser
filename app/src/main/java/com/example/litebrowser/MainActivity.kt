@@ -1,13 +1,19 @@
 package com.example.litebrowser
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.Message
 import android.view.KeyEvent
 import android.view.Menu
+import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -64,7 +70,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
 
         setupUrlBar()
         setupNavigationButtons()
-        setupBookmarkMenu()
+        setupOverflowMenus()
         setupBackPressHandler()
 
         runCatching { AdBlocker.init(this) }
@@ -102,6 +108,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
             addJavascriptInterface(imageBridge, "ImageJsBridge")
             webViewClient = BrowserWebViewClient(tabId)
             webChromeClient = BrowserWebChromeClient(tabId)
+            setupLinkLongPress(this)
         }
     }
 
@@ -170,21 +177,49 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
         updateNavigationState()
     }
 
-    private fun setupBookmarkMenu() {
-        binding.btnOverflow.setOnClickListener { anchor ->
+    private fun setupOverflowMenus() {
+        val showMenu = { anchor: View ->
             val popupMenu = PopupMenu(this, anchor)
-            popupMenu.menu.add(Menu.NONE, MENU_ADD_BOOKMARK, Menu.NONE, "Add this to bookmarks")
-            popupMenu.setOnMenuItemClickListener { item ->
-                if (item.itemId == MENU_ADD_BOOKMARK) {
-                    addCurrentToBookmarks()
+            popupMenu.menu.apply {
+                add(Menu.NONE, MENU_ADD_BOOKMARK, Menu.NONE, "Add this to bookmarks")
+                add(Menu.NONE, MENU_REFRESH, Menu.NONE, "Refresh")
+                add(Menu.NONE, MENU_NEW_TAB, Menu.NONE, "New Tab")
+                add(Menu.NONE, MENU_BOOKMARKS, Menu.NONE, "Bookmarks")
+                add(Menu.NONE, MENU_SHARE, Menu.NONE, "Share")
+                add(Menu.NONE, MENU_DOWNLOADS, Menu.NONE, "Downloads")
+                add(Menu.NONE, MENU_SETTINGS, Menu.NONE, "Settings")
+                add(Menu.NONE, MENU_DESKTOP_SITE, Menu.NONE, "Desktop Site").apply {
+                    isCheckable = true
+                    isChecked = desktopSiteEnabled
                 }
+            }
+
+            popupMenu.setOnMenuItemClickListener { item ->
+                handleMenuItem(item)
                 true
             }
             popupMenu.show()
         }
-        binding.btnOverflow.setOnLongClickListener {
-            startActivity(Intent(this, BookmarksActivity::class.java))
-            true
+
+        binding.btnOverflow.setOnClickListener { showMenu(it) }
+        binding.navMenu.setOnClickListener { showMenu(it) }
+    }
+
+    private fun handleMenuItem(item: MenuItem) {
+        when (item.itemId) {
+            MENU_ADD_BOOKMARK -> addCurrentToBookmarks()
+            MENU_REFRESH -> currentWebView?.reload()
+            MENU_NEW_TAB -> onNewTabRequested()
+            MENU_BOOKMARKS -> startActivity(Intent(this, BookmarksActivity::class.java))
+            MENU_SHARE -> shareCurrentUrl()
+            MENU_DOWNLOADS -> startActivity(Intent(this, DownloadsActivity::class.java))
+            MENU_SETTINGS -> startActivity(Intent(this, SettingsActivity::class.java))
+            MENU_DESKTOP_SITE -> {
+                desktopSiteEnabled = !desktopSiteEnabled
+                item.isChecked = desktopSiteEnabled
+                tabWebViews.values.forEach { setDesktopMode(it, desktopSiteEnabled) }
+                currentWebView?.reload()
+            }
         }
     }
 
@@ -194,6 +229,63 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
         val title = webView.title.orEmpty().ifBlank { url }
         BookmarkStore.add(this, title, url)
         Toast.makeText(this, "Added to bookmarks", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun shareCurrentUrl() {
+        val url = currentWebView?.url ?: binding.etUrl.text?.toString().orEmpty()
+        if (url.isBlank()) return
+
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, url)
+        }
+        startActivity(Intent.createChooser(intent, "Share link"))
+    }
+
+    private fun setupLinkLongPress(webView: WebView) {
+        webView.setOnLongClickListener {
+            val result = webView.hitTestResult ?: return@setOnLongClickListener false
+            val isLink = result.type == WebView.HitTestResult.SRC_ANCHOR_TYPE ||
+                result.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE
+            if (!isLink) return@setOnLongClickListener false
+
+            val handler = Handler(Looper.getMainLooper()) { msg ->
+                val data = msg.data
+                val url = data.getString("url").orEmpty().ifBlank { result.extra.orEmpty() }
+                val text = data.getString("title").orEmpty()
+                if (url.isNotBlank()) {
+                    showLinkContextMenu(webView, url, text)
+                }
+                true
+            }
+            val message = Message.obtain(handler)
+            webView.requestFocusNodeHref(message)
+            true
+        }
+    }
+
+    private fun showLinkContextMenu(anchor: View, url: String, text: String) {
+        val popupMenu = PopupMenu(this, anchor)
+        popupMenu.menu.add(Menu.NONE, MENU_LINK_NEW_TAB, Menu.NONE, "Open in new tab")
+        popupMenu.menu.add(Menu.NONE, MENU_LINK_COPY, Menu.NONE, "Copy link")
+        popupMenu.menu.add(Menu.NONE, MENU_LINK_COPY_TEXT, Menu.NONE, "Copy text")
+        popupMenu.menu.add(Menu.NONE, MENU_LINK_CLOSE, Menu.NONE, "Close")
+        popupMenu.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                MENU_LINK_NEW_TAB -> openInNewTab(url)
+                MENU_LINK_COPY -> copyToClipboard("Link", url)
+                MENU_LINK_COPY_TEXT -> copyToClipboard("Text", text.ifBlank { url })
+                MENU_LINK_CLOSE -> Unit
+            }
+            true
+        }
+        popupMenu.show()
+    }
+
+    private fun copyToClipboard(label: String, value: String) {
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText(label, value))
+        Toast.makeText(this, "$label copied", Toast.LENGTH_SHORT).show()
     }
 
     private fun setDesktopMode(webView: WebView, enabled: Boolean) {
@@ -479,6 +571,17 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
 
     companion object {
         private const val MENU_ADD_BOOKMARK = 1
+        private const val MENU_REFRESH = 2
+        private const val MENU_NEW_TAB = 3
+        private const val MENU_BOOKMARKS = 4
+        private const val MENU_SHARE = 5
+        private const val MENU_DOWNLOADS = 6
+        private const val MENU_SETTINGS = 7
+        private const val MENU_DESKTOP_SITE = 8
+        private const val MENU_LINK_NEW_TAB = 101
+        private const val MENU_LINK_COPY = 102
+        private const val MENU_LINK_COPY_TEXT = 103
+        private const val MENU_LINK_CLOSE = 104
         private const val TAB_SHEET_TAG = "tab_sheet"
     }
 }
