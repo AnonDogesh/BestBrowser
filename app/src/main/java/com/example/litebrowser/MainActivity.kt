@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Message
 import android.view.KeyEvent
+import android.view.Gravity
 import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
@@ -27,6 +28,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.PopupMenu
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -250,8 +252,16 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
     private fun setupLinkLongPress(webView: WebView) {
         webView.setOnLongClickListener {
             val result = webView.hitTestResult ?: return@setOnLongClickListener false
-            val isLink = result.type == WebView.HitTestResult.SRC_ANCHOR_TYPE ||
-                result.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE
+            val imageUrl = when (result.type) {
+                WebView.HitTestResult.IMAGE_TYPE, WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> result.extra.orEmpty()
+                else -> ""
+            }
+            if (imageUrl.isNotBlank()) {
+                ImageActionSheet.newInstance(imageUrl).show(supportFragmentManager, "imageAction")
+                return@setOnLongClickListener true
+            }
+
+            val isLink = result.type == WebView.HitTestResult.SRC_ANCHOR_TYPE
             if (!isLink) return@setOnLongClickListener false
 
             val handler = Handler(Looper.getMainLooper()) { msg ->
@@ -259,7 +269,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
                 val url = data.getString("url").orEmpty().ifBlank { result.extra.orEmpty() }
                 val text = data.getString("title").orEmpty()
                 if (url.isNotBlank()) {
-                    showLinkContextMenu(webView, url, text)
+                    showLinkContextMenu(url, text)
                 }
                 true
             }
@@ -269,22 +279,22 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
         }
     }
 
-    private fun showLinkContextMenu(anchor: View, url: String, text: String) {
-        val popupMenu = PopupMenu(this, anchor)
-        popupMenu.menu.add(Menu.NONE, MENU_LINK_NEW_TAB, Menu.NONE, "Open in new tab")
-        popupMenu.menu.add(Menu.NONE, MENU_LINK_COPY, Menu.NONE, "Copy link")
-        popupMenu.menu.add(Menu.NONE, MENU_LINK_COPY_TEXT, Menu.NONE, "Copy text")
-        popupMenu.menu.add(Menu.NONE, MENU_LINK_CLOSE, Menu.NONE, "Close")
-        popupMenu.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                MENU_LINK_NEW_TAB -> openInNewTab(url)
-                MENU_LINK_COPY -> copyToClipboard("Link", url)
-                MENU_LINK_COPY_TEXT -> copyToClipboard("Text", text.ifBlank { url })
-                MENU_LINK_CLOSE -> Unit
+    private fun showLinkContextMenu(url: String, text: String) {
+        val labels = arrayOf("Open in new tab", "Copy link", "Copy text", "Close")
+        val dialog = AlertDialog.Builder(this)
+            .setItems(labels) { d, which ->
+                when (which) {
+                    0 -> openInNewTab(url)
+                    1 -> copyToClipboard("Link", url)
+                    2 -> copyToClipboard("Text", text.ifBlank { url })
+                    else -> d.dismiss()
+                }
             }
-            true
+            .create()
+        dialog.setOnShowListener {
+            dialog.window?.setGravity(Gravity.CENTER)
         }
-        popupMenu.show()
+        dialog.show()
     }
 
     private fun copyToClipboard(label: String, value: String) {
@@ -583,10 +593,6 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
         private const val MENU_DOWNLOADS = 6
         private const val MENU_SETTINGS = 7
         private const val MENU_DESKTOP_SITE = 8
-        private const val MENU_LINK_NEW_TAB = 101
-        private const val MENU_LINK_COPY = 102
-        private const val MENU_LINK_COPY_TEXT = 103
-        private const val MENU_LINK_CLOSE = 104
         private const val TAB_SHEET_TAG = "tab_sheet"
     }
 }

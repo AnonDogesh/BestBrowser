@@ -41,6 +41,12 @@ object BookmarkStore {
         persist(context, existing)
     }
 
+    fun deleteByUrls(context: Context, urls: Set<String>) {
+        if (urls.isEmpty()) return
+        val existing = getAll(context).filterNot { it.url in urls }
+        persist(context, existing)
+    }
+
     private fun persist(context: Context, bookmarks: List<Bookmark>) {
         val arr = JSONArray()
         bookmarks.forEach {

@@ -19,22 +19,18 @@ import java.io.File
 class DownloadsActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityDownloadsBinding
+    private val selectedIds = linkedSetOf<String>()
     private val adapter = DownloadAdapter(
         onPause = { DownloadCenter.pause(this, it.id) },
         onResume = { DownloadCenter.resume(this, it.id) },
         onCancel = { DownloadCenter.cancel(this, it.id) },
         onDelete = { DownloadCenter.delete(this, it.id) },
-        onLongDelete = { item ->
-            AlertDialog.Builder(this)
-                .setTitle("Delete download")
-                .setMessage("Delete this downloaded file?")
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Delete") { _, _ ->
-                    DownloadCenter.delete(this, item.id)
-                }
-                .show()
-        },
+        onToggleSelect = { item -> toggleSelection(item.id) },
         onOpen = { item ->
+            if (selectedIds.isNotEmpty()) {
+                toggleSelection(item.id)
+                return@DownloadAdapter
+            }
             if (item.status == DownloadStatus.COMPLETED && item.filePath != null) {
                 val file = File(item.filePath)
                 if (file.exists() && isImage(file.name)) {
@@ -51,14 +47,41 @@ class DownloadsActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         binding.btnBack.setOnClickListener { finish() }
+        binding.btnDelete.visibility = View.GONE
+        binding.btnDelete.setOnClickListener { confirmDeleteSelected() }
         DownloadCenter.init(this)
 
         binding.rvDownloads.layoutManager = LinearLayoutManager(this)
         binding.rvDownloads.adapter = adapter
 
         lifecycleScope.launch {
-            DownloadCenter.downloads.collectLatest { adapter.submit(it) }
+            DownloadCenter.downloads.collectLatest {
+                adapter.submit(it)
+                adapter.setSelection(selectedIds)
+                binding.btnDelete.visibility = if (selectedIds.isEmpty()) View.GONE else View.VISIBLE
+            }
         }
+    }
+
+    private fun toggleSelection(id: String) {
+        if (selectedIds.contains(id)) selectedIds.remove(id) else selectedIds.add(id)
+        adapter.setSelection(selectedIds)
+        binding.btnDelete.visibility = if (selectedIds.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    private fun confirmDeleteSelected() {
+        if (selectedIds.isEmpty()) return
+        AlertDialog.Builder(this)
+            .setTitle("Delete downloads")
+            .setMessage("Delete ${selectedIds.size} selected files?")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Delete") { _, _ ->
+                selectedIds.toList().forEach { DownloadCenter.delete(this, it) }
+                selectedIds.clear()
+                adapter.setSelection(selectedIds)
+                binding.btnDelete.visibility = View.GONE
+            }
+            .show()
     }
 
     private fun isImage(name: String): Boolean =
@@ -70,14 +93,21 @@ private class DownloadAdapter(
     val onResume: (DownloadItem) -> Unit,
     val onCancel: (DownloadItem) -> Unit,
     val onDelete: (DownloadItem) -> Unit,
-    val onLongDelete: (DownloadItem) -> Unit,
+    val onToggleSelect: (DownloadItem) -> Unit,
     val onOpen: (DownloadItem) -> Unit
 ) : RecyclerView.Adapter<DownloadVH>() {
 
     private val items = mutableListOf<DownloadItem>()
+    private val selectedIds = mutableSetOf<String>()
 
     fun submit(newItems: List<DownloadItem>) {
         items.clear(); items.addAll(newItems)
+        notifyDataSetChanged()
+    }
+
+    fun setSelection(ids: Set<String>) {
+        selectedIds.clear()
+        selectedIds.addAll(ids)
         notifyDataSetChanged()
     }
 
@@ -90,18 +120,19 @@ private class DownloadAdapter(
 
     override fun onBindViewHolder(holder: DownloadVH, position: Int) {
         val item = items[position]
-        holder.bind(item, onPause, onResume, onCancel, onDelete, onLongDelete, onOpen)
+        holder.bind(item, selectedIds.contains(item.id), onPause, onResume, onCancel, onDelete, onToggleSelect, onOpen)
     }
 }
 
 private class DownloadVH(private val b: ItemDownloadBinding) : RecyclerView.ViewHolder(b.root) {
     fun bind(
         item: DownloadItem,
+        selected: Boolean,
         onPause: (DownloadItem) -> Unit,
         onResume: (DownloadItem) -> Unit,
         onCancel: (DownloadItem) -> Unit,
         onDelete: (DownloadItem) -> Unit,
-        onLongDelete: (DownloadItem) -> Unit,
+        onToggleSelect: (DownloadItem) -> Unit,
         onOpen: (DownloadItem) -> Unit
     ) {
         b.tvName.text = item.fileName
@@ -110,15 +141,17 @@ private class DownloadVH(private val b: ItemDownloadBinding) : RecyclerView.View
             else -> "${item.status} ${item.progress}%"
         }
 
+        b.root.alpha = if (selected) 0.6f else 1f
         b.progress.progress = item.progress
         b.progress.visibility = if (item.status == DownloadStatus.COMPLETED) View.GONE else View.VISIBLE
+        b.btnMore.visibility = if (selected) View.GONE else View.VISIBLE
 
         b.btnMore.setOnClickListener { anchor ->
             showMenu(anchor, item, onPause, onResume, onCancel, onDelete)
         }
         b.root.setOnClickListener { onOpen(item) }
         b.root.setOnLongClickListener {
-            onLongDelete(item)
+            onToggleSelect(item)
             true
         }
     }
