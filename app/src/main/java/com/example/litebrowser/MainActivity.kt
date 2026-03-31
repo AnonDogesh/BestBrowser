@@ -11,6 +11,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
+import android.print.PrintAttributes
+import android.print.PrintManager
 import android.view.KeyEvent
 import android.view.Gravity
 import android.view.Menu
@@ -43,7 +45,9 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
     private lateinit var binding: ActivityMainBinding
     private var desktopSiteEnabled = false
     private val tabWebViews = mutableMapOf<UUID, WebView>()
+    private val quickSearchTabs = mutableSetOf<UUID>()
     private var currentTabId: UUID? = null
+    private var lastBackPressedAt = 0L
 
     private val imageBridge = ImageJsBridge { imageUrl ->
         ImageActionSheet.newInstance(imageUrl).show(supportFragmentManager, "imageAction")
@@ -73,6 +77,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
         setupUrlBar()
         setupNavigationButtons()
         setupOverflowMenus()
+        setupQuickSearchButton()
         setupBackPressHandler()
 
         runCatching { AdBlocker.init(this) }
@@ -88,6 +93,10 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
         } ?: TabManager.newTab(getDefaultHomeUrl())
 
         switchToTab(startupTab.id)
+        if (startupUrl == null && TabManager.getTabs().size == 1) {
+            quickSearchTabs.add(startupTab.id)
+            updateQuickSearchButton()
+        }
     }
 
     private fun createWebViewForTab(tabId: UUID): WebView {
@@ -125,11 +134,34 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
                 val input = binding.etUrl.text?.toString().orEmpty().trim()
                 if (input.isNotEmpty()) {
                     currentWebView?.loadUrl(parseInput(input))
+                    currentTabId?.let {
+                        quickSearchTabs.remove(it)
+                        updateQuickSearchButton()
+                    }
                 }
                 true
             } else {
                 false
             }
+        }
+    }
+
+    private fun setupQuickSearchButton() {
+        binding.btnQuickSearchEngine.setOnClickListener {
+            val engines = AppSettings.SearchEngine.entries.toTypedArray()
+            val labels = engines.map { it.displayName }.toTypedArray()
+            val current = AppSettings.getSearchEngine(this)
+            val checkedIndex = engines.indexOf(current).coerceAtLeast(0)
+            AlertDialog.Builder(this)
+                .setTitle("Quick search engine")
+                .setSingleChoiceItems(labels, checkedIndex) { dialog, which ->
+                    val selected = engines[which]
+                    AppSettings.setSearchEngine(this, selected)
+                    currentWebView?.loadUrl(selected.homeUrl)
+                    dialog.dismiss()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
     }
 
@@ -183,6 +215,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
         binding.btnOverflow.setOnClickListener { anchor ->
             val popupMenu = PopupMenu(this, anchor)
             popupMenu.menu.add(Menu.NONE, MENU_ADD_BOOKMARK, Menu.NONE, "Add this to bookmarks")
+            popupMenu.menu.add(Menu.NONE, MENU_PRINT_PDF, Menu.NONE, "Print / Save as PDF")
             popupMenu.setOnMenuItemClickListener { item ->
                 handleMenuItem(item)
                 true
@@ -215,6 +248,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
     private fun handleMenuItem(item: MenuItem) {
         when (item.itemId) {
             MENU_ADD_BOOKMARK -> addCurrentToBookmarks()
+            MENU_PRINT_PDF -> printCurrentPage()
             MENU_REFRESH -> currentWebView?.reload()
             MENU_NEW_TAB -> onNewTabRequested()
             MENU_BOOKMARKS -> startActivity(Intent(this, BookmarksActivity::class.java))
@@ -303,6 +337,18 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
         Toast.makeText(this, "$label copied", Toast.LENGTH_SHORT).show()
     }
 
+    private fun printCurrentPage() {
+        val webView = currentWebView ?: return
+        val printManager = getSystemService(PRINT_SERVICE) as? PrintManager ?: return
+        val title = webView.title?.ifBlank { "webpage" } ?: "webpage"
+        val adapter = webView.createPrintDocumentAdapter("LiteBrowser_$title")
+        printManager.print(
+            "LiteBrowser_Print",
+            adapter,
+            PrintAttributes.Builder().build()
+        )
+    }
+
     private fun setDesktopMode(webView: WebView, enabled: Boolean) {
         webView.settings.apply {
             useWideViewPort = enabled
@@ -322,8 +368,13 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
                 if (webView != null && webView.canGoBack()) {
                     webView.goBack()
                 } else {
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
+                    val now = System.currentTimeMillis()
+                    if (now - lastBackPressedAt <= 1500) {
+                        finish()
+                    } else {
+                        lastBackPressedAt = now
+                        Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         })
@@ -366,8 +417,14 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
             updateNavigationState()
         }
 
+        updateQuickSearchButton()
         updateTabCount()
         TabManager.persist(this)
+    }
+
+    private fun updateQuickSearchButton() {
+        val tabId = currentTabId
+        binding.btnQuickSearchEngine.visibility = if (tabId != null && quickSearchTabs.contains(tabId)) View.VISIBLE else View.GONE
     }
 
     private fun updateNavigationState() {
@@ -416,6 +473,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
 
     override fun onNewTabRequested() {
         val tab = TabManager.newTab(getDefaultHomeUrl())
+        quickSearchTabs.add(tab.id)
         switchToTab(tab.id)
         Toast.makeText(this, "New tab opened", Toast.LENGTH_SHORT).show()
     }
@@ -516,6 +574,12 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
                 hideKeyboard()
                 updateNavigationState()
             }
+            val searchHomeUrls = AppSettings.SearchEngine.entries.map { it.homeUrl }.toSet()
+            val currentUrl = url.orEmpty()
+            if (currentUrl.isNotBlank() && !searchHomeUrls.any { currentUrl.startsWith(it) }) {
+                quickSearchTabs.remove(tabId)
+                if (tabId == currentTabId) updateQuickSearchButton()
+            }
             getSharedPreferences("adblock_prefs", MODE_PRIVATE).edit().putString("last_page_url", url.orEmpty()).apply()
 
             AdBlocker.getCosmeticCSS()?.let { css ->
@@ -593,6 +657,7 @@ class MainActivity : AppCompatActivity(), TabSheet.Callback, BrowserCallback {
         private const val MENU_DOWNLOADS = 6
         private const val MENU_SETTINGS = 7
         private const val MENU_DESKTOP_SITE = 8
+        private const val MENU_PRINT_PDF = 9
         private const val TAB_SHEET_TAG = "tab_sheet"
     }
 }
