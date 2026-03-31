@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <SwitchPreferenceCompat
+        android:key="adblock_enabled"
+        android:title="Enable ad blocking"
+        android:defaultValue="true" />
+
+    <Preference
+        android:key="toggle_allowlist"
+        android:title="Toggle current domain allowlist"
+        android:summary="Open a page first, then tap to toggle" />
+
+    <Preference
+        android:key="update_filters_now"
+        android:title="Update filter lists now" />
+
+    <EditTextPreference
+        android:key="custom_rules"
+        android:title="Custom filter rules"
+        android:summary="One rule per line" />
+
+    <Preference
+        android:key="blocked_count"
+        android:title="Blocked request count"
+        android:summary="0" />
+
+</PreferenceScreen>
